@@ -3,7 +3,7 @@
 // The adapter-core module gives you access to the core ioBroker functions
 // you need to create an adapter
 const utils = require('@iobroker/adapter-core');
-const { NAME_MAPPING, channelOf, stateCommon } = require('./lib/mapping');
+const { NAME_MAPPING, DCODE_MAPPING, STATE_MAPPING, channelOf, stateCommon } = require('./lib/mapping');
 const adapterName = require('./package.json').name.split('.').pop();
 
 /**
@@ -104,9 +104,26 @@ async function setDeviceState(id, common, value) {
     await adapter.setStateAsync(id, value, true);
 }
 
+/**
+ * Create a channel object once (cached) so dynamically discovered states have a tidy parent.
+ *
+ * @param id the channel id (e.g. "unknownStates")
+ * @param name the human-readable channel name
+ */
+async function ensureChannel(id, name) {
+    if (!ensuredObjects.has(id)) {
+        await adapter.setObjectNotExistsAsync(id, { type: 'channel', common: { name }, native: {} });
+        ensuredObjects.add(id);
+    }
+}
+
 async function updateStatus(status) {
-    for (const attr of Object.keys(NAME_MAPPING)) {
-        const item = NAME_MAPPING[attr];
+    // Use the generation-appropriate table so states are routed to a single category. The merged
+    // mapping has the same friendly name under both schemes (e.g. power), which would otherwise set
+    // the same state twice.
+    const MAPPING = airPurifier && airPurifier.newGen ? DCODE_MAPPING : NAME_MAPPING;
+    for (const attr of Object.keys(MAPPING)) {
+        const item = MAPPING[attr];
         if (!Object.prototype.hasOwnProperty.call(status, item.name)) {
             continue;
         }
@@ -155,6 +172,31 @@ async function updateStatus(status) {
         }
 
         await setDeviceState(`${channel}.${item.name}`, stateCommon(item), status[item.name]);
+    }
+
+    // Surface any reported attribute that no scheme maps yet under a dedicated `unknownStates`
+    // channel, so the user can observe and evaluate raw values (e.g. new-generation D-codes that
+    // kongo09 does not document). Created on demand only, read-only - never written back, so an
+    // unverified code can never be sent to the device.
+    const knownNames = new Set(Object.values(STATE_MAPPING).map(entry => entry.name));
+    const unknownKeys = Object.keys(status).filter(key => !knownNames.has(key));
+    if (unknownKeys.length) {
+        await ensureChannel('unknownStates', 'Unmapped device attributes');
+        for (const key of unknownKeys) {
+            const val = status[key];
+            const type = typeof val === 'number' ? 'number' : typeof val === 'boolean' ? 'boolean' : 'string';
+            await setDeviceState(
+                `unknownStates.${key}`,
+                {
+                    name: key,
+                    type,
+                    role: type === 'number' ? 'value' : type === 'boolean' ? 'indicator' : 'text',
+                    read: true,
+                    write: false,
+                },
+                type === 'string' && typeof val !== 'string' ? JSON.stringify(val) : val,
+            );
+        }
     }
 }
 

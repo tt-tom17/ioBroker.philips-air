@@ -29,6 +29,10 @@ It can happen, that some devices have not all variables, and they will stay unfi
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+- (tt-tom17) New-generation air purifiers (e.g. AC2221, AC3737) are now supported: temperature, humidity, air quality, filter life and controls such as power, child lock, mode, target humidity and timer appear automatically
+- (tt-tom17) Values the adapter does not recognise yet are now collected in a separate "unknownStates" folder, so you can see and report them instead of them staying hidden
+
 ### 1.5.0 (2026-06-24)
 - (tt-tom17) CoAP connection now stays stable instead of disconnecting every few minutes
 - (tt-tom17) Fixed adapter checker warnings
