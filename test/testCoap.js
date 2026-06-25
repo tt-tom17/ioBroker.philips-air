@@ -49,34 +49,28 @@ describe('coap - encryption', () => {
     });
 });
 
-describe('coap - renameAttributes', () => {
-    function rename(reported) {
+describe('coap - detectScheme', () => {
+    it('records the detected generation and leaves the raw status untouched', () => {
         const inst = makeInstance();
-        const status = { state: { reported } };
-        inst.renameAttributes(status);
-        return status.state.reported;
-    }
-
-    it('keeps numeric and boolean values native instead of stringifying them', () => {
-        const r = rename({ pm25: 7, aqil: 50, Runtime: 123456, fltsts1: 1804 });
-        expect(r.pm25).to.equal(7);
-        expect(r.lightBrightness).to.equal(50);
-        expect(r.uptime).to.equal(123456);
-        expect(r.hepaFilterReplaceInHours).to.equal(1804);
+        const reported = { pwr: '1', om: 'a', pm25: 7 };
+        inst.detectScheme({ state: { reported } });
+        expect(inst.generation).to.equal('classic');
+        // decoding now happens generation-agnostically in main.js, so the raw keys stay as-is
+        expect(reported).to.deep.equal({ pwr: '1', om: 'a', pm25: 7 });
     });
 
-    it('maps option values (power, childLock, mode, fanSpeed)', () => {
-        const r = rename({ pwr: '1', cl: 0, mode: 'M', om: 'a' });
-        expect(r.power).to.equal(true);
-        expect(r.childLock).to.equal(false);
-        expect(r.mode).to.equal('manual');
-        expect(r.fanSpeed).to.equal('auto');
+    it('is sticky: an indeterminate frame does not clear a known generation', () => {
+        const inst = makeInstance();
+        inst.detectScheme({ state: { reported: { D03102: 1, D0310D: 2 } } });
+        expect(inst.generation).to.equal('new-gen');
+        // a sparse follow-up frame (no marker, no D-code) must not flip the scheme
+        inst.detectScheme({ state: { reported: { WifiVersion: 'x' } } });
+        expect(inst.generation).to.equal('new-gen');
     });
 
-    it('maps known error codes and keeps unknown ones numeric', () => {
-        expect(rename({ err: 0 }).error).to.equal('none');
-        expect(rename({ err: 193 }).error).to.equal('pre-filter must be cleaned');
-        expect(rename({ err: 0x8000 }).error).to.equal('water tank open');
-        expect(rename({ err: 12345 }).error).to.equal(12345);
+    it('tolerates a malformed status object', () => {
+        const inst = makeInstance();
+        expect(() => inst.detectScheme({})).to.not.throw();
+        expect(inst.generation).to.equal(undefined);
     });
 });

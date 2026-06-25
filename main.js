@@ -3,7 +3,7 @@
 // The adapter-core module gives you access to the core ioBroker functions
 // you need to create an adapter
 const utils = require('@iobroker/adapter-core');
-const { NAME_MAPPING, DCODE_MAPPING, STATE_MAPPING, channelOf, stateCommon } = require('./lib/mapping');
+const { mapReported, stateCommon } = require('./lib/mapping');
 const adapterName = require('./package.json').name.split('.').pop();
 
 /**
@@ -117,33 +117,28 @@ async function ensureChannel(id, name) {
     }
 }
 
-async function updateStatus(status) {
-    // Use the generation-appropriate table so states are routed to a single category. The merged
-    // mapping has the same friendly name under both schemes (e.g. power), which would otherwise set
-    // the same state twice.
-    const MAPPING = airPurifier && airPurifier.newGen ? DCODE_MAPPING : NAME_MAPPING;
-    for (const attr of Object.keys(MAPPING)) {
-        const item = MAPPING[attr];
-        if (!Object.prototype.hasOwnProperty.call(status, item.name)) {
-            continue;
-        }
-        const channel = channelOf(item);
+async function updateStatus(reported) {
+    // Decode and route every raw attribute generation-agnostically: mapReported keys off the raw
+    // device code (which never collides between the classic and D-code schemes), so a device that
+    // mixes both is handled correctly without choosing a single table up front.
+    const { states, unknown } = mapReported(reported);
 
+    for (const { name, item, channel, value } of states) {
         // The 'function' state is presented as a humidification on/off switch, not the raw text.
-        if (item.name === 'function') {
+        if (name === 'function') {
             await setDeviceState(
                 'control.function',
                 { name: 'function', type: 'boolean', role: 'switch', read: true, write: true },
-                status.function === 'humidification',
+                value === 'humidification',
             );
             continue;
         }
 
         // Uptime additionally drives a derived "started" timestamp.
-        if (item.name === 'uptime') {
-            await setDeviceState('device.uptime', stateCommon(item), status.uptime);
+        if (name === 'uptime') {
+            await setDeviceState('device.uptime', stateCommon(item), value);
             const date = new Date();
-            date.setMilliseconds(date.getMilliseconds() - status.uptime);
+            date.setMilliseconds(date.getMilliseconds() - value);
             await setDeviceState(
                 'device.started',
                 { name: 'started', type: 'string', role: 'value.time', read: true, write: false },
@@ -152,39 +147,32 @@ async function updateStatus(status) {
             continue;
         }
 
-        // The error code drives a derived maintenance indicator. Known codes are mapped to a text by
-        // renameAttributes; unknown codes stay numeric. Only a known, non-'none' error means real
-        // maintenance is required - some models (e.g. AC2889) constantly report an undocumented code
-        // (193) while perfectly healthy, which must not raise a false maintenance flag.
-        if (item.name === 'error') {
-            const isKnownError = typeof status.error === 'string';
-            await setDeviceState(
-                'device.error',
-                stateCommon(item),
-                isKnownError ? status.error : `unknown (${status.error})`,
-            );
+        // The error code drives a derived maintenance indicator. Known codes are decoded to a text;
+        // unknown codes stay numeric. Only a known, non-'none' error means real maintenance is
+        // required - some models (e.g. AC2889) constantly report an undocumented code (193) while
+        // perfectly healthy, which must not raise a false maintenance flag.
+        if (name === 'error') {
+            const isKnownError = typeof value === 'string';
+            await setDeviceState('device.error', stateCommon(item), isKnownError ? value : `unknown (${value})`);
             await setDeviceState(
                 'device.maintenance',
                 { name: 'maintenance', type: 'boolean', role: 'indicator.maintenance', read: true, write: false },
-                isKnownError && status.error !== 'none',
+                isKnownError && value !== 'none',
             );
             continue;
         }
 
-        await setDeviceState(`${channel}.${item.name}`, stateCommon(item), status[item.name]);
+        await setDeviceState(`${channel}.${name}`, stateCommon(item), value);
     }
 
     // Surface any reported attribute that no scheme maps yet under a dedicated `unknownStates`
     // channel, so the user can observe and evaluate raw values (e.g. new-generation D-codes that
     // kongo09 does not document). Created on demand only, read-only - never written back, so an
     // unverified code can never be sent to the device.
-    const knownNames = new Set(Object.values(STATE_MAPPING).map(entry => entry.name));
-    const unknownKeys = Object.keys(status).filter(key => !knownNames.has(key));
-    if (unknownKeys.length) {
+    if (unknown.length) {
         await ensureChannel('unknownStates', 'Unmapped device attributes');
-        for (const key of unknownKeys) {
-            const val = status[key];
-            const type = typeof val === 'number' ? 'number' : typeof val === 'boolean' ? 'boolean' : 'string';
+        for (const { key, value } of unknown) {
+            const type = typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string';
             await setDeviceState(
                 `unknownStates.${key}`,
                 {
@@ -194,7 +182,7 @@ async function updateStatus(status) {
                     read: true,
                     write: false,
                 },
-                type === 'string' && typeof val !== 'string' ? JSON.stringify(val) : val,
+                type === 'string' && typeof value !== 'string' ? JSON.stringify(value) : value,
             );
         }
     }
@@ -232,6 +220,15 @@ async function main() {
 
     airPurifier.on('status', async status => {
         adapter.log.debug(`STATUS: ${JSON.stringify(status)}`);
+        // Expose the detected protocol generation (classic vs new-gen D-code) for transparency. The
+        // client keeps this sticky, so an ambiguous frame never clears it.
+        if (airPurifier.generation) {
+            await setDeviceState(
+                'device.protocolGeneration',
+                { name: 'protocolGeneration', type: 'string', role: 'text', read: true, write: false },
+                airPurifier.generation,
+            );
+        }
         await updateStatus(status);
     });
 

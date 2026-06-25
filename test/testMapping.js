@@ -4,19 +4,29 @@ const {
     DCODE_MAPPING,
     STATE_MAPPING,
     isNewGen,
+    detectGeneration,
     channelOf,
     stateCommon,
-    renameReported,
+    decodeValue,
+    mapReported,
     buildControlPayload,
 } = require('../lib/mapping');
 const ac2221 = require('./fixtures/ac2221.reported.json');
 const ac3737 = require('./fixtures/ac3737.reported.json');
 
-describe('mapping - renameReported', () => {
-    it('renames attributes, maps options and keeps native types', () => {
+// Flatten mapReported's decoded states into a { friendlyName: value } object for concise assertions.
+function decoded(reported) {
+    const out = {};
+    for (const s of mapReported(reported).states) {
+        out[s.name] = s.value;
+    }
+    return out;
+}
+
+describe('mapping - mapReported', () => {
+    it('decodes attributes, maps options and keeps native types', () => {
         const reported = { pm25: 7, pwr: '1', cl: 0, mode: 'M', om: 'a', name: 'Schlafzimmer' };
-        renameReported(reported);
-        expect(reported).to.deep.equal({
+        expect(decoded(reported)).to.deep.equal({
             pm25: 7,
             power: true,
             childLock: false,
@@ -27,19 +37,60 @@ describe('mapping - renameReported', () => {
     });
 
     it('maps known error codes and keeps unknown ones numeric', () => {
-        const r = { err: 193 };
-        renameReported(r);
-        expect(r.error).to.equal('pre-filter must be cleaned');
-        const u = { err: 12345 };
-        renameReported(u);
-        expect(u.error).to.equal(12345);
+        expect(decoded({ err: 193 }).error).to.equal('pre-filter must be cleaned');
+        expect(decoded({ err: 12345 }).error).to.equal(12345);
     });
 
-    it('ignores unknown attributes and tolerates a missing object', () => {
-        const r = { somethingUnknown: 5 };
-        renameReported(r);
-        expect(r).to.deep.equal({ somethingUnknown: 5 });
-        expect(() => renameReported(undefined)).to.not.throw();
+    it('routes unknown attributes to the unknown list and tolerates a missing object', () => {
+        const r = mapReported({ somethingUnknown: 5 });
+        expect(r.states).to.deep.equal([]);
+        expect(r.unknown).to.deep.equal([{ key: 'somethingUnknown', value: 5 }]);
+        expect(() => mapReported(undefined)).to.not.throw();
+        expect(mapReported(undefined)).to.deep.equal({ states: [], unknown: [] });
+    });
+
+    it('routes each state to the right channel', () => {
+        const channels = {};
+        for (const s of mapReported({ pwr: '1', pm25: 7, fltsts0: 100, name: 'x' }).states) {
+            channels[s.name] = s.channel;
+        }
+        expect(channels).to.deep.equal({
+            power: 'control',
+            pm25: 'status',
+            preFilterCleanInHours: 'filter',
+            name: 'device',
+        });
+    });
+
+    it('decodes classic and D-code attributes in the same payload (real AC4236 hybrid)', () => {
+        const r = mapReported({
+            pwr: '1',
+            om: '1',
+            mode: 'AG',
+            pm25: 4,
+            D03180: 0,
+            D0311F: 1,
+            D03R81: '0s123s23t',
+            D03182: 1,
+        });
+        const names = r.states.map(s => s.name);
+        // classic attributes are still decoded ...
+        expect(names).to.include('power');
+        expect(names).to.include('mode');
+        // ... and the one mapped D-code is too, even though the device is classic
+        expect(names).to.include('autoPlusAi'); // D03180
+        // genuinely unmapped D-codes surface as unknown rather than being dropped
+        expect(r.unknown.map(u => u.key)).to.have.members(['D0311F', 'D03R81', 'D03182']);
+    });
+});
+
+describe('mapping - decodeValue', () => {
+    it('resolves options, scales numbers and coerces the rest', () => {
+        expect(decodeValue(NAME_MAPPING.pwr, '1')).to.equal(true); // option code -> boolean
+        expect(decodeValue(DCODE_MAPPING.D03224, 220)).to.equal(22); // tenths -> 22.0 °C
+        expect(decodeValue(NAME_MAPPING.pm25, 7)).to.equal(7); // native number kept
+        expect(decodeValue(NAME_MAPPING.name, 'Schlafzimmer')).to.equal('Schlafzimmer'); // string kept
+        expect(decodeValue(NAME_MAPPING.name, null)).to.equal(''); // nullish coerced to empty string
     });
 });
 
@@ -95,23 +146,50 @@ describe('mapping - NAME_MAPPING', () => {
     });
 });
 
-describe('mapping - isNewGen', () => {
+describe('mapping - detectGeneration / isNewGen', () => {
     it('detects the new-generation D-code scheme from real payloads', () => {
+        expect(detectGeneration(ac2221)).to.equal('new-gen');
+        expect(detectGeneration(ac3737)).to.equal('new-gen');
         expect(isNewGen(ac2221)).to.equal(true);
-        expect(isNewGen(ac3737)).to.equal(true);
     });
 
-    it('reports false for old-generation and edge cases', () => {
-        expect(isNewGen({ pwr: 1, om: 'a', pm25: 7, DeviceId: 'x' })).to.equal(false);
+    it('detects classic devices', () => {
+        expect(detectGeneration({ pwr: 1, om: 'a', pm25: 7, DeviceId: 'x' })).to.equal('classic');
+        expect(isNewGen({ pwr: 1, om: 'a' })).to.equal(false);
+    });
+
+    it('returns null for indeterminate frames so a sparse response cannot flip the scheme', () => {
+        // A firmware/filter-style HTTP response carries neither a classic marker nor a D-code.
+        expect(detectGeneration({ WifiVersion: 'x', swversion: 'y' })).to.equal(null);
+        expect(detectGeneration({})).to.equal(null);
+        expect(detectGeneration(undefined)).to.equal(null);
         expect(isNewGen({})).to.equal(false);
         expect(isNewGen(undefined)).to.equal(false);
     });
+
+    it('stays classic when a classic device sprinkles in a few D-codes (real AC4236)', () => {
+        // Real AC4236/14 payload: classic scheme plus a handful of extra D-code attributes.
+        // Must NOT be misdetected as new-gen, or control would target the wrong (D-code) scheme.
+        const ac4236 = {
+            type: 'AC4236',
+            om: '1',
+            pwr: '1',
+            mode: 'AG',
+            pm25: 4,
+            aqit: 4,
+            D0311F: 1,
+            D03180: 0,
+            D03R81: '0s123s23t',
+            D03182: 1,
+        };
+        expect(detectGeneration(ac4236)).to.equal('classic');
+        expect(isNewGen(ac4236)).to.equal(false);
+    });
 });
 
-describe('mapping - renameReported (D-codes)', () => {
+describe('mapping - mapReported (D-codes)', () => {
     it('decodes the AC2221 (Combo) payload from real logs', () => {
-        const r = { ...ac2221 };
-        renameReported(r);
+        const r = decoded(ac2221);
         // device info (note: D01S03 = location/room, D01S04 = device name)
         expect(r.name).to.equal('Büro');
         expect(r.roomName).to.equal('Cobra');
@@ -131,13 +209,13 @@ describe('mapping - renameReported (D-codes)', () => {
         expect(r.preFilterTotalHours).to.equal(720);
         expect(r.hepaFilterReplaceInHours).to.equal(19200);
         expect(r.hepaFilterTotalHours).to.equal(19200);
-        // unmapped codes are left untouched (they surface in the info log)
-        expect(r.D0313B).to.equal(20);
+        // unmapped codes surface under unknownStates instead of being dropped
+        const unknown = Object.fromEntries(mapReported(ac2221).unknown.map(u => [u.key, u.value]));
+        expect(unknown.D0313B).to.equal(20);
     });
 
     it('decodes the AC3737 payload incl. scaled temperature and 2nd filter', () => {
-        const r = { ...ac3737 };
-        renameReported(r);
+        const r = decoded(ac3737);
         expect(r.modelId).to.equal('AC3737/10');
         expect(r.power).to.equal(true);
         expect(r.fanSpeed).to.equal(5); // D0310D
