@@ -32,6 +32,7 @@ It can happen, that some devices have not all variables, and they will stay unfi
 ### **WORK IN PROGRESS**
 - (tt-tom17) New-generation air purifiers are now supported
 - (tt-tom17) Values the adapter does not recognise yet are now collected in a separate "unknownStates" folder
+- (tt-tom17) New "Show device status" option that logs the raw device status, so you can see it without turning on debug logging
 
 ### 1.5.0 (2026-06-24)
 - (tt-tom17) CoAP connection now stays stable instead of disconnecting every few minutes
