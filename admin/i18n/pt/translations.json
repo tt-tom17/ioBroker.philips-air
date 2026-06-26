@@ -6,5 +6,7 @@
     "Reconnect interval": "Intervalo de reconexão",
     "ms": "ms",
     "ms - should be >= Alive timeout": "ms - deve ser >= tempo limite de atividade",
-    "Reconnect interval should be at least the Alive timeout": "O intervalo de reconexão deve ser pelo menos o tempo limite de atividade"
+    "Reconnect interval should be at least the Alive timeout": "O intervalo de reconexão deve ser pelo menos o tempo limite de atividade",
+    "Show device status": "Mostrar estado do dispositivo",
+    "Logs the raw device status at info level": "Regista o estado bruto do dispositivo ao nível info"
 }

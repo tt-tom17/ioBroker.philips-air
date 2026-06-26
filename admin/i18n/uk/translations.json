@@ -6,5 +6,7 @@
     "Reconnect interval": "Інтервал повторного підключення",
     "ms": "мс",
     "ms - should be >= Alive timeout": "мс — має бути >= тайм-аут активності",
-    "Reconnect interval should be at least the Alive timeout": "Інтервал перепідключення має бути не меншим за тайм-аут активності"
+    "Reconnect interval should be at least the Alive timeout": "Інтервал перепідключення має бути не меншим за тайм-аут активності",
+    "Show device status": "Показувати статус пристрою",
+    "Logs the raw device status at info level": "Записує необроблений статус пристрою на рівні info"
 }

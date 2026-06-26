@@ -6,5 +6,7 @@
     "Reconnect interval": "重连间隔",
     "ms": "毫秒",
     "ms - should be >= Alive timeout": "毫秒 - 应 >= 活动超时",
-    "Reconnect interval should be at least the Alive timeout": "重连间隔应至少为活动超时时间"
+    "Reconnect interval should be at least the Alive timeout": "重连间隔应至少为活动超时时间",
+    "Show device status": "显示设备状态",
+    "Logs the raw device status at info level": "以 info 级别记录设备原始状态"
 }

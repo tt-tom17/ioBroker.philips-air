@@ -6,5 +6,7 @@
     "Reconnect interval": "Interval opnieuw verbinden",
     "ms": "ms",
     "ms - should be >= Alive timeout": "ms - moet >= Alive-timeout zijn",
-    "Reconnect interval should be at least the Alive timeout": "Het herverbindingsinterval moet minstens gelijk zijn aan de Alive-timeout"
+    "Reconnect interval should be at least the Alive timeout": "Het herverbindingsinterval moet minstens gelijk zijn aan de Alive-timeout",
+    "Show device status": "Apparaatstatus tonen",
+    "Logs the raw device status at info level": "Logt de ruwe apparaatstatus op infoniveau"
 }

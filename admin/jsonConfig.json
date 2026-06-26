@@ -64,6 +64,18 @@
       "md": 4,
       "lg": 4,
       "xl": 4
+    },
+    "showStatus": {
+      "newLine": true,
+      "type": "checkbox",
+      "label": "Show device status",
+      "help": "Logs the raw device status at info level",
+      "default": false,
+      "xs": 12,
+      "sm": 12,
+      "md": 6,
+      "lg": 6,
+      "xl": 6
     }
   }
 }

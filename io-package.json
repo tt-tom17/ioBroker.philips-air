@@ -168,7 +168,8 @@
     "host": "",
     "aliveTimeout": 30000,
     "reconnectInterval": 30000,
-    "protocol": "coap"
+    "protocol": "coap",
+    "showStatus": false
   },
   "objects": [],
   "instanceObjects": [

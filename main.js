@@ -219,7 +219,14 @@ async function main() {
     });
 
     airPurifier.on('status', async status => {
-        adapter.log.debug(`STATUS: ${JSON.stringify(status)}`);
+        // Surface the raw device status at info level when the user enabled the "Show device status"
+        // option, so it is visible without switching the whole adapter to debug logging.
+        const statusMsg = `STATUS: ${JSON.stringify(status)}`;
+        if (adapter.config.showStatus) {
+            adapter.log.info(statusMsg);
+        } else {
+            adapter.log.debug(statusMsg);
+        }
         // Expose the detected protocol generation (classic vs new-gen D-code) for transparency. The
         // client keeps this sticky, so an ambiguous frame never clears it.
         if (airPurifier.generation) {
