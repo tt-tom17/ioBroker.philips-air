@@ -270,6 +270,7 @@ describe('mapping - channelOf & stateCommon', () => {
 
     it('exposes option controls as a dropdown but keeps booleans plain', () => {
         expect(stateCommon(DCODE_MAPPING.D0310C).states).to.deep.equal({
+            off: 'off',
             auto: 'auto',
             sleep: 'sleep',
             turbo: 'turbo',
