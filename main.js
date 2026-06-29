@@ -247,6 +247,10 @@ async function main() {
         adapter.log.debug(status);
     });
 
+    airPurifier.on('warn', async status => {
+        adapter.log.warn(status);
+    });
+
     airPurifier.on('error', async status => {
         adapter.log.error(status);
     });

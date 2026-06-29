@@ -30,6 +30,22 @@ describe('coap - encryption', () => {
         expect(() => inst.decryptPayload(Buffer.from(tampered))).to.throw(/corrupted/i);
     });
 
+    it('decryptPayload tolerates trailing NUL padding in the payload', async () => {
+        const inst = makeInstance();
+        const payload = { state: { desired: { om: '1', pwr: '1' } } };
+        const encrypted = await inst.encryptPayload(payload);
+        // Some firmwares pad the encrypted payload with trailing NUL bytes.
+        const padded = Buffer.concat([Buffer.from(encrypted), Buffer.from([0, 0, 0])]);
+        const decrypted = await inst.decryptPayload(padded);
+        expect(JSON.parse(decrypted)).to.deep.equal(payload);
+    });
+
+    it('decryptPayload rejects a non-hex / too-short payload with a clear error', () => {
+        const inst = makeInstance();
+        expect(() => inst.decryptPayload(Buffer.from('not-hex-garbage'))).to.throw(/Unexpected encrypted payload/i);
+        expect(() => inst.decryptPayload(Buffer.from('AABB'))).to.throw(/Unexpected encrypted payload/i);
+    });
+
     it('updateClientKey increments the key as an 8-char uppercase hex counter', () => {
         const inst = makeInstance('0000000F');
         inst.updateClientKey();
